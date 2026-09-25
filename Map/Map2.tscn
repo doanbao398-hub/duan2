@@ -9,6 +9,7 @@
 [ext_resource type="Texture2D" uid="uid://bahbfgvbpgr7f" path="res://Map/Anh Map/Map 1/Layer tile/Assets.png" id="8_1aj61"]
 [ext_resource type="Texture2D" uid="uid://kwh0wvu4g5i4" path="res://Map/Anh Map/Map 2/2_Mine_Tileset_1_Background_16.png" id="8_ii6fj"]
 [ext_resource type="PackedScene" uid="uid://b04k4ds2q8mtb" path="res://player/player.tscn" id="9_vdf3l"]
+[ext_resource type="PackedScene" uid="uid://73fsnk62skki" path="res://quai/quai robot/robot.tscn" id="10_toyve"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_5shv3"]
 texture = ExtResource("6_5shv3")
@@ -438,3 +439,5 @@ layer_0/tile_data = PackedInt32Array(917418, 65538, 0, 917419, 65538, 0, 917420,
 
 [node name="player" parent="." unique_id=338672422 instance=ExtResource("9_vdf3l")]
 position = Vector2(-1056, -115)
+
+[node name="Robot" parent="." unique_id=1888022072 instance=ExtResource("10_toyve")]

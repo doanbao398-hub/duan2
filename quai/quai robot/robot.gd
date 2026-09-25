@@ -1,7 +1,7 @@
-extends CharacterBody2D
+extends Entity
 
 # --- ENUMS & PHÂN LUỒNG TRẠNG THÁI ---
-enum State { PATROL, CHASE, ATTACK }
+enum State { PATROL, CHASE, ATTACK, DEAD }
 var current_state: State = State.PATROL
 
 # --- NODE REFERENCES ---
@@ -15,6 +15,10 @@ var current_state: State = State.PATROL
 @onready var patrol_area: Area2D = $PatrolArea
 @onready var wall_detector: RayCast2D = $WallDetector
 
+# References cho 2 viên đạn
+@onready var dan_1: Area2D = $Dan1
+@onready var dan_2: Area2D = $Dan2
+
 # --- CONFIGURATION (EXPORT VARIABLES) ---
 @export_group("Movement Settings")
 @export var patrol_speed: float = 40.0
@@ -23,6 +27,7 @@ var current_state: State = State.PATROL
 
 @export_group("Combat Settings")
 @export var skill_cooldown_time: float = 6.0
+@export var attack_damage: int = 10
 
 # --- INTERNAL VARIABLES ---
 var direction: int = 1:
@@ -32,6 +37,7 @@ var direction: int = 1:
 			_update_facing_direction()
 
 var can_use_skill: bool = true
+var has_fired_chest_muzzle: bool = false
 var target_player: Node2D = null
 var skill_cooldown_timer: Timer
 
@@ -39,17 +45,18 @@ var gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
 
 # --- LIFECYCLE METHODS ---
 func _ready() -> void:
+	super._ready()
 	_setup_nodes()
 	_setup_signals()
 	_update_facing_direction()
 
 func _physics_process(delta: float) -> void:
+	if current_state == State.DEAD:
+		return
+
 	_apply_gravity(delta)
+	_update_target_player()
 	
-	# Luôn quét tìm Player trong vùng PatrolArea
-	target_player = _scan_for_player_in_patrol()
-	
-	# Xử lý các trạng thái hoạt động của Robot
 	match current_state:
 		State.PATROL:
 			_handle_patrol_state()
@@ -59,6 +66,27 @@ func _physics_process(delta: float) -> void:
 			_handle_attack_state()
 			
 	move_and_slide()
+
+# --- TARGET SCANNING ---
+func _update_target_player() -> void:
+	var detected_player = _scan_for_player()
+	if detected_player:
+		target_player = detected_player
+	elif current_state == State.PATROL:
+		target_player = null
+
+func _scan_for_player() -> Node2D:
+	if patrol_area:
+		for body in patrol_area.get_overlapping_bodies():
+			if _is_body_player(body):
+				return body
+				
+	var players = get_tree().get_nodes_in_group("player")
+	for p in players:
+		if p is Node2D and _patrol_area_contains_point(p.global_position):
+			return p
+			
+	return null
 
 # --- STATE HANDLERS ---
 func _handle_patrol_state() -> void:
@@ -76,22 +104,23 @@ func _handle_chase_state() -> void:
 		current_state = State.PATROL
 		return
 
-	# Bỏ qua va chạm vật lý với Player để không bị kẹt khi đuổi theo
 	add_collision_exception_with(target_player)
+	_face_target(target_player.global_position)
 
-	# Kiểm tra điều kiện tung kỹ năng
-	if can_use_skill and _is_player_in_range(chuong_range):
-		_use_beam_skill()
-		return
-	elif _is_player_in_range(melee_range):
+	# Lựa chọn kỹ năng khi sẵn sàng
+	if can_use_skill:
+		if randf() <= 0.30: # 30% tỷ lệ tung chiêu bắn đạn ngực
+			_use_chest_muzzle_skill()
+			return
+		elif _is_player_in_range(chuong_range) and randf() <= 0.02: # 2% TỶ LỆ TUNG CHƯỞNG
+			_use_beam_skill()
+			return
+
+	if _is_player_in_range(melee_range):
 		_use_melee_skill()
 		return
 
-	# Xử lý di chuyển dí theo Player
-	var dist_x: float = target_player.global_position.x - global_position.x
-	if abs(dist_x) > 8.0:
-		direction = 1 if dist_x > 0 else -1
-
+	# Di chuyển lại gần Player
 	velocity.x = direction * chase_speed
 	robot_anim.play("walk")
 	_check_and_jump()
@@ -99,13 +128,56 @@ func _handle_chase_state() -> void:
 func _handle_attack_state() -> void:
 	velocity.x = 0
 
-# --- MOVEMENT & SENSORS ---
+# --- COMBAT LOGIC ---
+func _use_melee_skill() -> void:
+	current_state = State.ATTACK
+	_hide_all_skills()
+	if is_instance_valid(target_player):
+		_face_target(target_player.global_position)
+	robot_anim.play("def")
+
+func _use_beam_skill() -> void:
+	current_state = State.ATTACK
+	can_use_skill = false
+	_hide_all_skills()
+	
+	if is_instance_valid(target_player):
+		_face_target(target_player.global_position)
+		
+	robot_anim.play("attack")
+	if chuong_1:
+		chuong_1.show()
+		chuong_1.play("default")
+
+func _use_chest_muzzle_skill() -> void:
+	current_state = State.ATTACK
+	can_use_skill = false
+	has_fired_chest_muzzle = false
+	_hide_all_skills()
+	
+	if is_instance_valid(target_player):
+		_face_target(target_player.global_position)
+		
+	robot_anim.play("ChestMuzzle")
+
+func _hide_all_skills() -> void:
+	for skill in [chuong_1, chuong_2, chuong_3]:
+		if skill:
+			skill.hide()
+			skill.stop()
+
+# --- HELPER FUNCTIONS ---
+func _face_target(target_pos: Vector2) -> void:
+	var dist_x: float = target_pos.x - global_position.x
+	if abs(dist_x) > 8.0:
+		direction = 1 if dist_x > 0 else -1
+
 func _apply_gravity(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y += gravity * delta
 
 func _check_and_jump() -> void:
-	if wall_detector.is_colliding() and is_on_floor():
+	if wall_detector and wall_detector.is_colliding() and is_on_floor():
 		var collider = wall_detector.get_collider()
 		if collider and not _is_body_player(collider):
 			velocity.y = jump_velocity
@@ -127,28 +199,18 @@ func _update_facing_direction() -> void:
 			ch.flip_h = is_facing_left
 			ch.position.x = abs(ch.position.x) * mult
 
+	for dan in [dan_1, dan_2]:
+		if dan:
+			dan.position.x = abs(dan.position.x) * mult
+			if not dan.get("is_active"):
+				dan.rotation = PI if is_facing_left else 0.0
+
 	if chuong_range:
-		chuong_range.position.x = abs(chuong_range.position.x) * mult
+		chuong_range.scale.x = mult
 	if melee_range:
-		melee_range.position.x = abs(melee_range.position.x) * mult
+		melee_range.scale.x = mult
 	if wall_detector:
 		wall_detector.target_position.x = abs(wall_detector.target_position.x) * mult
-
-# --- TARGET SCANNING & DETECTION ---
-func _scan_for_player_in_patrol() -> Node2D:
-	if not patrol_area:
-		return null
-		
-	for body in patrol_area.get_overlapping_bodies():
-		if _is_body_player(body):
-			return body
-			
-	var players = get_tree().get_nodes_in_group("player")
-	for p in players:
-		if p is Node2D and _patrol_area_contains_point(p.global_position):
-			return p
-			
-	return null
 
 func _patrol_area_contains_point(point: Vector2) -> bool:
 	if not patrol_area:
@@ -169,9 +231,9 @@ func _is_player_in_range(area: Area2D) -> bool:
 	return false
 
 func _is_body_player(body: Node) -> bool:
-	if body == null or body == self:
+	if body == null or body == self or not is_instance_valid(body):
 		return false
-	if body.is_in_group("player"):
+	if body.is_in_group("player") or body.is_in_group("Player"):
 		return true
 	var name_lower = body.name.to_lower()
 	if "player" in name_lower or "ngoaihinh" in name_lower:
@@ -180,23 +242,32 @@ func _is_body_player(body: Node) -> bool:
 		return true
 	return false
 
-# --- COMBAT LOGIC ---
-func _use_melee_skill() -> void:
-	current_state = State.ATTACK
-	_hide_all_skills()
-	robot_anim.play("def")
+func _deal_damage_to_player(damage: int) -> void:
+	if is_instance_valid(target_player) and target_player.has_method("take_damage"):
+		target_player.take_damage(damage)
 
-func _use_beam_skill() -> void:
-	current_state = State.ATTACK
-	can_use_skill = false
+func die() -> void:
+	if current_state == State.DEAD:
+		return
+		
+	current_state = State.DEAD
+	velocity = Vector2.ZERO
 	_hide_all_skills()
-	robot_anim.play("attack")
+	
+	set_physics_process(false)
+	if has_node("CollisionShape2D"):
+		$CollisionShape2D.set_deferred("disabled", true)
+	if health_bar:
+		health_bar.hide()
+		
+	if robot_anim and robot_anim.sprite_frames.has_animation("cbdie"):
+		robot_anim.play("cbdie")
+		await robot_anim.animation_finished
+	elif robot_anim and robot_anim.sprite_frames.has_animation("die"):
+		robot_anim.play("die")
+		await robot_anim.animation_finished
 
-func _hide_all_skills() -> void:
-	for skill in [chuong_1, chuong_2, chuong_3]:
-		if skill:
-			skill.hide()
-			skill.stop()
+	super.die()
 
 # --- INITIALIZATION HELPER METHODS ---
 func _setup_nodes() -> void:
@@ -214,28 +285,60 @@ func _setup_nodes() -> void:
 func _setup_signals() -> void:
 	skill_cooldown_timer.timeout.connect(_on_skill_cooldown_timeout)
 	robot_anim.animation_finished.connect(_on_robot_anim_finished)
-	chuong_1.frame_changed.connect(_on_chuong1_frame_changed)
-	chuong_2.animation_finished.connect(_on_skill_finished)
+	robot_anim.frame_changed.connect(_on_robot_anim_frame_changed)
+	
+	if chuong_1:
+		chuong_1.frame_changed.connect(_on_chuong1_frame_changed)
+	if chuong_2:
+		chuong_2.animation_finished.connect(_on_skill_finished)
 
 # --- SIGNAL CALLBACKS ---
+func _on_robot_anim_frame_changed() -> void:
+	if robot_anim.animation == "ChestMuzzle" and robot_anim.frame == 4:
+		if not has_fired_chest_muzzle:
+			has_fired_chest_muzzle = true
+			
+			# LỌC VÙNG BỘ NHỚ HỢP LỆ TRÁNH LỖI PREVIOUSLY FREED
+			var valid_player: Node2D = target_player if is_instance_valid(target_player) else null
+			
+			if dan_1 and dan_1.has_method("fire"):
+				dan_1.fire(valid_player, direction)
+			if dan_2 and dan_2.has_method("fire"):
+				dan_2.fire(valid_player, direction)
+
 func _on_robot_anim_finished() -> void:
-	if robot_anim.animation == "attack":
-		chuong_1.show()
-		chuong_1.play("default")
+	if current_state == State.DEAD:
+		return
+		
+	if robot_anim.animation == "ChestMuzzle":
+		_start_skill_cooldown()
 	elif robot_anim.animation == "def":
-		current_state = State.PATROL
+		_deal_damage_to_player(attack_damage)
+		current_state = State.CHASE
 
 func _on_chuong1_frame_changed() -> void:
 	if chuong_1.frame == 5:
-		chuong_2.show()
-		chuong_2.play("default")
-		chuong_3.show()
-		chuong_3.play("default")
+		if chuong_2:
+			chuong_2.show()
+			chuong_2.play("default")
+		if chuong_3:
+			chuong_3.show()
+			chuong_3.play("default")
 
 func _on_skill_finished() -> void:
+	if current_state == State.DEAD:
+		return
+		
+	if _is_player_in_range(chuong_range):
+		_deal_damage_to_player(attack_damage * 2)
+
 	_hide_all_skills()
-	current_state = State.PATROL
-	skill_cooldown_timer.start()
+	_start_skill_cooldown()
+
+func _start_skill_cooldown() -> void:
+	current_state = State.CHASE
+	if skill_cooldown_timer.is_stopped():
+		skill_cooldown_timer.start()
 
 func _on_skill_cooldown_timeout() -> void:
 	can_use_skill = true

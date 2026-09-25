@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="du an n"
-run/main_scene="uid://i8yid2hwdyla"
+run/main_scene="uid://bpnyoy7l47tdv"
 config/features=PackedStringArray("4.7", "Mobile")
 
 [display]
