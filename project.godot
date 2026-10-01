@@ -11,8 +11,12 @@ config_version=5
 [application]
 
 config/name="du an n"
-run/main_scene="uid://bpnyoy7l47tdv"
+run/main_scene="uid://i8yid2hwdyla"
 config/features=PackedStringArray("4.7", "Mobile")
+
+[autoload]
+
+EventBus="*uid://dw2n2vkeanu3c"
 
 [display]
 

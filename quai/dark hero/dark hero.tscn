@@ -606,7 +606,7 @@ animations = [{
 size = Vector2(45, 83)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_ox8qj"]
-size = Vector2(1661, 701)
+size = Vector2(775, 493)
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_0jclj"]
 radius = 40.0
@@ -615,10 +615,9 @@ height = 96.0
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_mw8wg"]
 bg_color = Color(1, 0, 0, 1)
 
-[node name="DarkHero" type="CharacterBody2D" unique_id=472344276]
+[node name="DarkHero" type="CharacterBody2D" unique_id=472344276 groups=["Enemy"]]
 collision_layer = 4
 script = ExtResource("1_7pm54")
-max_health = 500
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=593617214]
 position = Vector2(-4.000001, 3.000001)
@@ -633,8 +632,8 @@ shape = SubResource("RectangleShape2D_q8kr4")
 [node name="PatrolArea" type="Area2D" parent="." unique_id=1228890435]
 collision_mask = 2
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="PatrolArea" unique_id=1671165407]
-position = Vector2(91.5, 172.5)
+[node name="CollisionShape2D" type="CollisionShape2D" parent="PatrolArea" unique_id=1671165407 groups=["Enemy"]]
+position = Vector2(-11.5, 68.5)
 shape = SubResource("RectangleShape2D_ox8qj")
 
 [node name="MeleeRange" type="Area2D" parent="." unique_id=1509722430]

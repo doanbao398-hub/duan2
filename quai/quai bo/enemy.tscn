@@ -378,7 +378,7 @@ animations = [{
 }]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_q8kr4"]
-size = Vector2(41.5, 61)
+size = Vector2(41.5, 54)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_0jclj"]
 size = Vector2(771.5, 88)
@@ -398,13 +398,10 @@ script = ExtResource("1_vqpuq")
 position = Vector2(7.000003, -8.999998)
 scale = Vector2(1.3978494, 1.4479166)
 sprite_frames = SubResource("SpriteFrames_0jclj")
-animation = &"die2"
-frame = 5
-frame_progress = 1.0
+animation = &"walk"
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=386533854]
-visible = false
-position = Vector2(3.25, -15.5)
+position = Vector2(3.25, -19)
 shape = SubResource("RectangleShape2D_q8kr4")
 
 [node name="Area2D" type="Area2D" parent="." unique_id=751321692]
@@ -413,19 +410,19 @@ position = Vector2(42, 28)
 collision_mask = 2
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D" unique_id=1638986277]
-visible = false
 position = Vector2(-42, -45)
 shape = SubResource("RectangleShape2D_0jclj")
 
 [node name="MeleeRange" type="Area2D" parent="." unique_id=645444219]
+visible = false
 collision_mask = 2
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="MeleeRange" unique_id=1636057122]
 position = Vector2(4, -20)
 shape = SubResource("CapsuleShape2D_0jclj")
 
-[node name="WallDetector" type="RayCast2D" parent="." unique_id=584672757]
-position = Vector2(11, 9)
+[node name="WallDetector" type="RayCast2D" parent="." unique_id=584672757 groups=["Enemy"]]
+position = Vector2(11, 7)
 target_position = Vector2(26, 0)
 
 [node name="HealthBar" type="ProgressBar" parent="." unique_id=971632448]

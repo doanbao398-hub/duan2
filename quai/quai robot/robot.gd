@@ -1,8 +1,8 @@
 extends Entity
 
 # --- ENUMS & PHÂN LUỒNG TRẠNG THÁI ---
-enum State { PATROL, CHASE, ATTACK, DEAD }
-var current_state: State = State.PATROL
+enum State { SLEEP, SPAWNING, PATROL, CHASE, ATTACK, DEFENDING, RECOVERY, DEAD }
+var current_state: State = State.SLEEP
 
 # --- NODE REFERENCES ---
 @onready var robot_anim: AnimatedSprite2D = $chuyendongrobbot
@@ -12,10 +12,11 @@ var current_state: State = State.PATROL
 
 @onready var chuong_range: Area2D = $"ChưởngRange"
 @onready var melee_range: Area2D = $MeleeRange
+@onready var def_range: Area2D = $chuyendongrobbot/DefRange
 @onready var patrol_area: Area2D = $PatrolArea
 @onready var wall_detector: RayCast2D = $WallDetector
 
-# References cho 2 viên đạn
+# References cho các loại đạn ngực
 @onready var dan_1: Area2D = $Dan1
 @onready var dan_2: Area2D = $Dan2
 
@@ -26,8 +27,15 @@ var current_state: State = State.PATROL
 @export var jump_velocity: float = -350.0
 
 @export_group("Combat Settings")
-@export var skill_cooldown_time: float = 6.0
+@export var skill_cooldown_time: float = 3.0
+@export var decision_interval: float = 0.8
+@export var recovery_time: float = 0.5
 @export var attack_damage: int = 10
+
+@export_group("Defend Settings")
+@export var def_duration: float = 1.5             # Thời gian giữ khiên đỡ (giây)
+@export var def_cooldown_time: float = 0.5        # Đã giảm cooldown xuống 0.5s để đỡ liên tục hơn
+@export var def_chance: float = 0.2            # Đã tăng tỉ lệ đỡ lên 100% (1.0) để test chắc chắn chạy
 
 # --- INTERNAL VARIABLES ---
 var direction: int = 1:
@@ -37,9 +45,17 @@ var direction: int = 1:
 			_update_facing_direction()
 
 var can_use_skill: bool = true
+var can_defend: bool = true                        
 var has_fired_chest_muzzle: bool = false
+var has_hit_melee: bool = false
 var target_player: Node2D = null
+
+# Timers quản lý nhịp đấu
 var skill_cooldown_timer: Timer
+var decision_timer: Timer
+var recovery_timer: Timer
+var def_hold_timer: Timer                          
+var def_cooldown_timer: Timer                      
 
 var gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
 
@@ -49,12 +65,20 @@ func _ready() -> void:
 	_setup_nodes()
 	_setup_signals()
 	_update_facing_direction()
+	_setup_sleep_state()
 
 func _physics_process(delta: float) -> void:
 	if current_state == State.DEAD:
 		return
 
 	_apply_gravity(delta)
+	
+	if current_state == State.SLEEP:
+		velocity.x = 0
+		move_and_slide()
+		_check_player_entered_patrol_to_spawn()
+		return
+
 	_update_target_player()
 	
 	match current_state:
@@ -62,10 +86,65 @@ func _physics_process(delta: float) -> void:
 			_handle_patrol_state()
 		State.CHASE:
 			_handle_chase_state()
-		State.ATTACK:
-			_handle_attack_state()
+		State.SPAWNING, State.ATTACK, State.DEFENDING, State.RECOVERY:
+			_handle_stopped_state()
 			
 	move_and_slide()
+
+# --- CƠ CHẾ XUẤT HIỆN ---
+func _setup_sleep_state() -> void:
+	current_state = State.SLEEP
+	visible = false
+	if health_bar:
+		health_bar.hide()
+
+func _check_player_entered_patrol_to_spawn() -> void:
+	var detected_player = _scan_for_player()
+	if detected_player:
+		_trigger_spawn(detected_player)
+
+func _trigger_spawn(player_node: Node2D) -> void:
+	current_state = State.SPAWNING
+	target_player = player_node
+	visible = true
+	_face_target(target_player.global_position)
+	
+	if robot_anim and robot_anim.sprite_frames.has_animation("xuathien"):
+		robot_anim.play("xuathien")
+	else:
+		_finish_spawning()
+
+func _finish_spawning() -> void:
+	if current_state == State.DEAD:
+		return
+	if health_bar:
+		health_bar.show()
+	current_state = State.CHASE
+
+# --- LẮNG NGHE SỰ KIỆN TẤN CÔNG TỪ EVENTBUS (ĐÃ SỬA LẠI ĐIỀU KIỆN DEF) ---
+func _on_entity_attacked(attacker: Node2D) -> void:
+	# Không đỡ khi đang Ngủ, Spawn, Đã Chết, hoặc Đang trong thời gian Cooldown khiên
+	if current_state in [State.DEAD, State.SLEEP, State.SPAWNING, State.DEFENDING] or not can_defend:
+		return
+		
+	# Kiểm tra nếu đối tượng tấn công là Player HOẶC Player đang ở trong vùng DefRange
+	if _is_body_player(attacker) or _is_player_in_range(def_range):
+		if randf() <= def_chance:
+			print("Robot: Phản xạ bật khiên DEFEND!") # Thêm print để bạn dễ debug trên console
+			_use_defend_skill()
+
+# --- HÀM NHẬN SÁT THƯƠNG ---
+func take_damage(amount: int) -> void:
+	if current_state in [State.SLEEP, State.SPAWNING]:
+		return
+		
+	# Nếu đang bật khiên -> Block hoàn toàn đòn đánh
+	if current_state == State.DEFENDING or (robot_anim and robot_anim.animation == "def"):
+		if _is_player_in_range(def_range):
+			return
+		
+	if super.has_method("take_damage"):
+		super.take_damage(amount)
 
 # --- TARGET SCANNING ---
 func _update_target_player() -> void:
@@ -81,7 +160,10 @@ func _scan_for_player() -> Node2D:
 			if _is_body_player(body):
 				return body
 				
-	var players = get_tree().get_nodes_in_group("player")
+	var players = get_tree().get_nodes_in_group("Player")
+	if players.size() == 0:
+		players = get_tree().get_nodes_in_group("player")
+		
 	for p in players:
 		if p is Node2D and _patrol_area_contains_point(p.global_position):
 			return p
@@ -105,36 +187,65 @@ func _handle_chase_state() -> void:
 		return
 
 	add_collision_exception_with(target_player)
-	_face_target(target_player.global_position)
-
-	# Lựa chọn kỹ năng khi sẵn sàng
-	if can_use_skill:
-		if randf() <= 0.30: # 30% tỷ lệ tung chiêu bắn đạn ngực
-			_use_chest_muzzle_skill()
-			return
-		elif _is_player_in_range(chuong_range) and randf() <= 0.02: # 2% TỶ LỆ TUNG CHƯỞNG
-			_use_beam_skill()
-			return
 
 	if _is_player_in_range(melee_range):
-		_use_melee_skill()
+		_use_arm_fire_skill()
 		return
 
-	# Di chuyển lại gần Player
+	_face_target(target_player.global_position)
 	velocity.x = direction * chase_speed
 	robot_anim.play("walk")
 	_check_and_jump()
 
-func _handle_attack_state() -> void:
+func _handle_stopped_state() -> void:
 	velocity.x = 0
 
+# --- THUẬT TOÁN CHỌN SKILL TẦM XA ---
+func _on_decision_timer_timeout() -> void:
+	if current_state != State.CHASE or not can_use_skill or not is_instance_valid(target_player):
+		return
+
+	if _is_player_in_range(melee_range):
+		return
+
+	var rand_val = randf()
+	if _is_player_in_range(chuong_range):
+		if rand_val < 0.5:
+			_use_beam_skill()
+		else:
+			_use_chest_muzzle_skill()
+	else:
+		if rand_val < 0.4:
+			_use_chest_muzzle_skill()
+
 # --- COMBAT LOGIC ---
-func _use_melee_skill() -> void:
-	current_state = State.ATTACK
+func _use_defend_skill() -> void:
+	current_state = State.DEFENDING
+	can_defend = false
 	_hide_all_skills()
+	
 	if is_instance_valid(target_player):
 		_face_target(target_player.global_position)
+		
 	robot_anim.play("def")
+	def_hold_timer.start()
+
+func _on_def_hold_timeout() -> void:
+	def_cooldown_timer.start()
+	_enter_recovery_phase()
+
+func _on_def_cooldown_timeout() -> void:
+	can_defend = true
+
+func _use_arm_fire_skill() -> void:
+	current_state = State.ATTACK
+	has_hit_melee = false
+	_hide_all_skills()
+	
+	if is_instance_valid(target_player):
+		_face_target(target_player.global_position)
+		
+	robot_anim.play("arm_fire")
 
 func _use_beam_skill() -> void:
 	current_state = State.ATTACK
@@ -166,10 +277,32 @@ func _hide_all_skills() -> void:
 			skill.hide()
 			skill.stop()
 
+# --- RECOVERY & COOLDOWN MANAGEMENT ---
+func _enter_recovery_phase() -> void:
+	current_state = State.RECOVERY
+	if robot_anim.sprite_frames.has_animation("idle"):
+		robot_anim.play("idle")
+	else:
+		robot_anim.stop()
+		
+	recovery_timer.start()
+	_start_skill_cooldown()
+
+func _on_recovery_timeout() -> void:
+	if current_state in [State.RECOVERY, State.DEFENDING]:
+		current_state = State.CHASE
+
+func _start_skill_cooldown() -> void:
+	if skill_cooldown_timer.is_stopped():
+		skill_cooldown_timer.start()
+
+func _on_skill_cooldown_timeout() -> void:
+	can_use_skill = true
+
 # --- HELPER FUNCTIONS ---
 func _face_target(target_pos: Vector2) -> void:
 	var dist_x: float = target_pos.x - global_position.x
-	if abs(dist_x) > 8.0:
+	if abs(dist_x) > 25.0:
 		direction = 1 if dist_x > 0 else -1
 
 func _apply_gravity(delta: float) -> void:
@@ -202,8 +335,6 @@ func _update_facing_direction() -> void:
 	for dan in [dan_1, dan_2]:
 		if dan:
 			dan.position.x = abs(dan.position.x) * mult
-			if not dan.get("is_active"):
-				dan.rotation = PI if is_facing_left else 0.0
 
 	if chuong_range:
 		chuong_range.scale.x = mult
@@ -242,10 +373,7 @@ func _is_body_player(body: Node) -> bool:
 		return true
 	return false
 
-func _deal_damage_to_player(damage: int) -> void:
-	if is_instance_valid(target_player) and target_player.has_method("take_damage"):
-		target_player.take_damage(damage)
-
+# --- XỬ LÝ KHI ROBOT CHẾT ---
 func die() -> void:
 	if current_state == State.DEAD:
 		return
@@ -260,10 +388,7 @@ func die() -> void:
 	if health_bar:
 		health_bar.hide()
 		
-	if robot_anim and robot_anim.sprite_frames.has_animation("cbdie"):
-		robot_anim.play("cbdie")
-		await robot_anim.animation_finished
-	elif robot_anim and robot_anim.sprite_frames.has_animation("die"):
+	if robot_anim and robot_anim.sprite_frames.has_animation("die"):
 		robot_anim.play("die")
 		await robot_anim.animation_finished
 
@@ -282,8 +407,37 @@ func _setup_nodes() -> void:
 	skill_cooldown_timer.one_shot = true
 	add_child(skill_cooldown_timer)
 
+	decision_timer = Timer.new()
+	decision_timer.wait_time = decision_interval
+	decision_timer.autostart = true
+	add_child(decision_timer)
+
+	recovery_timer = Timer.new()
+	recovery_timer.wait_time = recovery_time
+	recovery_timer.one_shot = true
+	add_child(recovery_timer)
+
+	def_hold_timer = Timer.new()
+	def_hold_timer.wait_time = def_duration
+	def_hold_timer.one_shot = true
+	add_child(def_hold_timer)
+
+	def_cooldown_timer = Timer.new()
+	def_cooldown_timer.wait_time = def_cooldown_time
+	def_cooldown_timer.one_shot = true
+	add_child(def_cooldown_timer)
+
 func _setup_signals() -> void:
+	if EventBus.has_signal("entity_attacked"):
+		EventBus.entity_attacked.connect(_on_entity_attacked)
+
 	skill_cooldown_timer.timeout.connect(_on_skill_cooldown_timeout)
+	decision_timer.timeout.connect(_on_decision_timer_timeout)
+	recovery_timer.timeout.connect(_on_recovery_timeout)
+	
+	def_hold_timer.timeout.connect(_on_def_hold_timeout)
+	def_cooldown_timer.timeout.connect(_on_def_cooldown_timeout)
+	
 	robot_anim.animation_finished.connect(_on_robot_anim_finished)
 	robot_anim.frame_changed.connect(_on_robot_anim_frame_changed)
 	
@@ -297,24 +451,29 @@ func _on_robot_anim_frame_changed() -> void:
 	if robot_anim.animation == "ChestMuzzle" and robot_anim.frame == 4:
 		if not has_fired_chest_muzzle:
 			has_fired_chest_muzzle = true
-			
-			# LỌC VÙNG BỘ NHỚ HỢP LỆ TRÁNH LỖI PREVIOUSLY FREED
 			var valid_player: Node2D = target_player if is_instance_valid(target_player) else null
-			
 			if dan_1 and dan_1.has_method("fire"):
 				dan_1.fire(valid_player, direction)
 			if dan_2 and dan_2.has_method("fire"):
 				dan_2.fire(valid_player, direction)
 
+	elif robot_anim.animation == "arm_fire" and robot_anim.frame == 3:
+		if not has_hit_melee:
+			has_hit_melee = true
+			if _is_player_in_range(melee_range):
+				if is_instance_valid(target_player) and target_player.has_method("take_damage"):
+					target_player.take_damage(attack_damage)
+
 func _on_robot_anim_finished() -> void:
 	if current_state == State.DEAD:
 		return
 		
-	if robot_anim.animation == "ChestMuzzle":
-		_start_skill_cooldown()
-	elif robot_anim.animation == "def":
-		_deal_damage_to_player(attack_damage)
-		current_state = State.CHASE
+	if robot_anim.animation == "xuathien":
+		_finish_spawning()
+		return
+		
+	if robot_anim.animation in ["ChestMuzzle", "arm_fire"]:
+		_enter_recovery_phase()
 
 func _on_chuong1_frame_changed() -> void:
 	if chuong_1.frame == 5:
@@ -330,15 +489,8 @@ func _on_skill_finished() -> void:
 		return
 		
 	if _is_player_in_range(chuong_range):
-		_deal_damage_to_player(attack_damage * 2)
+		if is_instance_valid(target_player) and target_player.has_method("take_damage"):
+			target_player.take_damage(attack_damage * 2)
 
 	_hide_all_skills()
-	_start_skill_cooldown()
-
-func _start_skill_cooldown() -> void:
-	current_state = State.CHASE
-	if skill_cooldown_timer.is_stopped():
-		skill_cooldown_timer.start()
-
-func _on_skill_cooldown_timeout() -> void:
-	can_use_skill = true
+	_enter_recovery_phase()

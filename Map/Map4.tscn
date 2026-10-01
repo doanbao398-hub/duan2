@@ -2,9 +2,10 @@
 
 [ext_resource type="Texture2D" uid="uid://b2gm3s3hg2uye" path="res://Map/Anh Map/Map4/4d1b46c9-e9b6-4c30-8b1d-8482034f3551.png" id="1_ck4yd"]
 [ext_resource type="Texture2D" uid="uid://cisac4spe17ns" path="res://Map/Anh Map/Map4/0e86b493-0929-4e22-81d8-60acef195a0d.jpg" id="1_ghkmf"]
-[ext_resource type="Texture2D" uid="uid://c4w2c0xnjj6bt" path="res://Map/Anh Map/Map 1/Layer tile/world_tileset.png" id="2_ck4yd"]
-[ext_resource type="Texture2D" uid="uid://bu7h1olroc15q" path="res://Map/Anh Map/Map 1/Layer nền/Layer_0002_7.png" id="3_m3l1x"]
+[ext_resource type="Texture2D" uid="uid://c4w2c0xnjj6bt" path="res://Map/Anh Map/Map1/Layer tile/world_tileset.png" id="2_ck4yd"]
+[ext_resource type="Texture2D" uid="uid://bu7h1olroc15q" path="res://Map/Anh Map/Map1/Layer nền/Layer_0002_7.png" id="3_m3l1x"]
 [ext_resource type="PackedScene" uid="uid://b04k4ds2q8mtb" path="res://player/player.tscn" id="4_jw3jv"]
+[ext_resource type="PackedScene" uid="uid://bgwcmelejdovd" path="res://quai/dark hero/dark hero.tscn" id="6_m3l1x"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_52qpd"]
 texture = ExtResource("2_ck4yd")
@@ -5059,3 +5060,6 @@ shape = SubResource("RectangleShape2D_ck4yd")
 [node name="CollisionShape2D3" type="CollisionShape2D" parent="StaticBody2D" unique_id=1477417007]
 position = Vector2(470.25, -186)
 shape = SubResource("RectangleShape2D_m3l1x")
+
+[node name="DarkHero" parent="." unique_id=472344276 instance=ExtResource("6_m3l1x")]
+position = Vector2(278, 390)

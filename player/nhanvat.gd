@@ -17,6 +17,13 @@ const DOUBLE_TAP_TIME = 0.3
 @onready var skill_timer: Timer = get_node_or_null("SkillTimer") if has_node("SkillTimer") else get_node_or_null("../SkillTimer")
 @onready var melee_range: Area2D = $MeleeRange
 
+# Onready các Marker2D định vị thanh máu
+@onready var hp_right_marker: Marker2D = get_node_or_null("HealthBarRight")
+@onready var hp_left_marker: Marker2D = get_node_or_null("HealthBarLeft")
+
+# Biến lưu vị trí X ban đầu của MeleeRange
+var melee_range_initial_x: float = 0.0
+
 # Quản lý trạng thái
 var normal_attack_step: int = 0
 var is_attacking: bool = false
@@ -27,9 +34,11 @@ func _ready() -> void:
 	super._ready()
 	add_to_group("Player")
 
-	# RESET TRẠNG THÁI BAN ĐẦU (Tránh bị kẹt đứng yên khi vừa load scene)
 	is_attacking = false
 	velocity = Vector2.ZERO
+
+	if melee_range:
+		melee_range_initial_x = abs(melee_range.position.x)
 
 	if anim_player:
 		anim_player.animation_finished.connect(_on_animation_finished)
@@ -59,7 +68,7 @@ func _physics_process(delta: float) -> void:
 				velocity.y = JUMP_VELOCITY
 		last_jump_press_time = current_time
 
-	# 5. Xử lý di chuyển (Tương tự logic DarkHero - không cho phép bị hãm dừng khi đang nhấn phím)
+	# 5. Xử lý di chuyển
 	if not is_attacking:
 		if is_flying:
 			var direction_x := Input.get_axis("ui_left", "ui_right")
@@ -74,10 +83,8 @@ func _physics_process(delta: float) -> void:
 			if direction != 0:
 				velocity.x = direction * SPEED
 			else:
-				# Giảm tốc từ từ thay vì ngắt đột ngột
 				velocity.x = move_toward(velocity.x, 0, DECELERATION * delta)
 	else:
-		# Khi đang đánh chỉ dừng di chuyển ngang, vẫn giữ trọng lực rơi nếu đang ở trên không
 		velocity.x = 0
 		if not is_on_floor() and not is_flying:
 			velocity.y += get_gravity().y * delta
@@ -93,7 +100,7 @@ func deal_damage_to_enemies(amount: int) -> void:
 	var bodies = melee_range.get_overlapping_bodies()
 	for body in bodies:
 		if body == self or body.is_in_group("Player"): 
-			continue # Bỏ qua chính mình và đồng minh
+			continue
 		if body.has_method("take_damage"):
 			body.take_damage(amount)
 
@@ -101,6 +108,9 @@ func deal_damage_to_enemies(amount: int) -> void:
 func use_normal_attack() -> void:
 	is_attacking = true
 	
+	if Engine.has_singleton("EventBus") or get_node_or_null("/root/EventBus"):
+		EventBus.entity_attacked.emit(self)
+
 	normal_attack_step += 1
 	if normal_attack_step > 3:
 		normal_attack_step = 1
@@ -108,7 +118,6 @@ func use_normal_attack() -> void:
 	if anim_player and anim_player.has_animation("attack" + str(normal_attack_step)):
 		anim_player.play("attack" + str(normal_attack_step))
 	else:
-		# Lớp bảo vệ: Nếu không có animation thì tự mở khóa trạng thái sau 0.2s
 		get_tree().create_timer(0.2).timeout.connect(func(): is_attacking = false)
 	
 	await get_tree().create_timer(0.05).timeout
@@ -122,6 +131,9 @@ func use_skill() -> void:
 
 	is_attacking = true
 	
+	if Engine.has_singleton("EventBus") or get_node_or_null("/root/EventBus"):
+		EventBus.entity_attacked.emit(self)
+
 	if anim_player and anim_player.has_animation("attack4"):
 		anim_player.play("attack4")
 	else:
@@ -135,22 +147,26 @@ func use_skill() -> void:
 		skill_timer.start()
 
 func _on_animation_finished(anim_name: String) -> void:
-	# Giải phóng trạng thái đánh ngay khi animation chạy xong
 	if anim_name.begins_with("attack"):
 		is_attacking = false
 
 func update_animation(direction: float) -> void:
 	if not anim_player or not sprite: return
 
-	# Lật hình bằng scale/flip để không làm lệch tâm va chạm MeleeRange
+	# LẬT VỊ TRÍ HEALTHBAR THEO MARKER2D KHI ĐỔI HƯỚNG
 	if direction > 0:
 		sprite.flip_h = false
 		if melee_range:
-			melee_range.scale.x = 1
+			melee_range.position.x = melee_range_initial_x
+		if health_bar and hp_right_marker:
+			health_bar.position = hp_right_marker.position
+
 	elif direction < 0:
 		sprite.flip_h = true
 		if melee_range:
-			melee_range.scale.x = -1
+			melee_range.position.x = -melee_range_initial_x
+		if health_bar and hp_left_marker:
+			health_bar.position = hp_left_marker.position
 
 	if is_attacking:
 		return

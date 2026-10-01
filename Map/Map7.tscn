@@ -15,6 +15,8 @@
 [ext_resource type="Texture2D" uid="uid://ctm866e4udwfd" path="res://Map/Anh Map/Map7/Animated Sprites/Campfire with food sheet.png" id="13_dwf4r"]
 [ext_resource type="Texture2D" uid="uid://wkjbshf2ecfl" path="res://Map/Anh Map/Map7/nền/Cây/Weeping Willow1.png" id="14_y7ewy"]
 [ext_resource type="PackedScene" uid="uid://b04k4ds2q8mtb" path="res://player/player.tscn" id="15_it66h"]
+[ext_resource type="PackedScene" uid="uid://73fsnk62skki" path="res://quai/quai robot/robot.tscn" id="16_4d3u7"]
+[ext_resource type="PackedScene" uid="uid://c515ruch62mnn" path="res://quai/quai skeletion/skeletion.tscn" id="17_86euq"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_v6e7y"]
 atlas = ExtResource("13_dwf4r")
@@ -1279,3 +1281,9 @@ region_enabled = true
 
 [node name="player" parent="." unique_id=338672422 instance=ExtResource("15_it66h")]
 position = Vector2(-155, 156)
+
+[node name="Robot" parent="." unique_id=1888022072 instance=ExtResource("16_4d3u7")]
+position = Vector2(1294, 273)
+
+[node name="Skeletion" parent="." unique_id=1706014403 instance=ExtResource("17_86euq")]
+position = Vector2(1915, 375)
